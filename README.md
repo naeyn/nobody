@@ -91,6 +91,7 @@ English, and Dutch:
 | model | F1 | leakage |
 |---|---:|---:|
 | **nobody v0.2.0** | **0.927** | **0.51%** |
+| `gliner_multi_pii-v1` zero-shot | 0.826 | 6.60% |
 | Piiranha | 0.677 | 24.09% |
 
 Piiranha is strongest on the German benchmark drawn from its own training-data
@@ -98,6 +99,7 @@ distribution and is licensed CC-BY-NC-ND. The synthetic set is close to
 `nobody`'s training distribution and should be read as regression evidence,
 not an independent real-world benchmark. Gate decisions use point estimates;
 the German leakage interval still crosses 2% at its upper bound.
+The GLiNER synthetic row was recomputed with the shipped production policy; no synthetic confidence interval is reported for this comparison.
 
 Published artifacts:
 

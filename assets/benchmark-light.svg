@@ -41,7 +41,8 @@
 <path d="M606,176 h209.21 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-209.21 z" fill="#2a78d6"/>
 <text x="827.21" y="189" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start">0.927</text>
 <text x="480" y="227" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">GLiNER zero-shot</text>
-<text x="614" y="227" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start">not re-measured under protocol v2</text>
+<path d="M606,214 h185.98 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-185.98 z" fill="#008300"/>
+<text x="803.98" y="227" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">0.826</text>
 <text x="480" y="265" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Piiranha</text>
 <path d="M606,252 h151.71 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-151.71 z" fill="#e87ba4"/>
 <text x="769.71" y="265" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">0.677</text>
@@ -85,7 +86,8 @@
 <path d="M606,346 h0.69 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-0.69 z" fill="#2a78d6"/>
 <text x="618.692" y="359" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="600" fill="#0b0b0b" text-anchor="start">0.51%</text>
 <text x="480" y="397" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">GLiNER zero-shot</text>
-<text x="636.4" y="397" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="11" font-weight="400" fill="#898781" text-anchor="start">not re-measured</text>
+<path d="M606,384 h56.72 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-56.72 z" fill="#008300"/>
+<text x="674.72" y="397" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">6.60%</text>
 <text x="480" y="435" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#52514e" text-anchor="start">Piiranha</text>
 <path d="M606,422 h217.63 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-217.63 z" fill="#e87ba4"/>
 <text x="835.6279999999999" y="435" font-family="system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">24.09%</text>
