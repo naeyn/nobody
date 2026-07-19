@@ -76,8 +76,9 @@ of gold PII tokens missed; lower is better.
   <img alt="Protocol-v2 benchmark comparing nobody, GLiNER zero-shot, and Piiranha on F1 and PII leakage" src="assets/benchmark-light.svg">
 </picture>
 
-**Real German documents** — 3,000-document validation stream, with 95%
-document-level bootstrap confidence intervals:
+**External German benchmark** — 3,000 documents from the German validation
+stream of `ai4privacy/pii-masking-400k` (synthetic, out-of-distribution for
+`nobody`), with 95% document-level bootstrap confidence intervals:
 
 | model | F1 | leakage |
 |---|---:|---:|
@@ -94,10 +95,12 @@ English, and Dutch:
 | `gliner_multi_pii-v1` zero-shot | 0.826 | 6.60% |
 | Piiranha | 0.677 | 24.09% |
 
-Piiranha is strongest on the German benchmark drawn from its own training-data
-distribution and is licensed CC-BY-NC-ND. The synthetic set is close to
-`nobody`'s training distribution and should be read as regression evidence,
-not an independent real-world benchmark. Gate decisions use point estimates;
+Both benchmarks are synthetic. The German set comes from an independent
+generator — external to `nobody`'s training distribution but drawn from
+Piiranha's own, where Piiranha is strongest (it is licensed CC-BY-NC-ND).
+The multilingual set is close to `nobody`'s training distribution and should
+be read as regression evidence, not an independent benchmark; no benchmark
+here is real-world data. Gate decisions use point estimates;
 the German leakage interval still crosses 2% at its upper bound.
 The GLiNER synthetic row was recomputed with the shipped production policy; no synthetic confidence interval is reported for this comparison.
 
