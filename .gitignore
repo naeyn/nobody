@@ -1,0 +1,58 @@
+# Private research and release work
+prompts/
+release/
+results/
+configs/
+baselines/
+data/
+models/
+
+# Local model and dataset pointers
+model/
+dataset/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
+secrets*
+
+# Experiment and temporary artifacts
+*.log
+*.out
+*.err
+*.tmp
+*.temp
+*.bak
+*.swp
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+checkpoints/
+runs/
+wandb/
+mlruns/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/

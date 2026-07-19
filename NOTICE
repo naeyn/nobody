@@ -1,0 +1,14 @@
+nobody — German-first PII redaction
+Copyright (c) 2026 naeyn. Apache-2.0 (see LICENSE).
+
+Third-party training data attribution:
+Portions of the released model's training data (25,909 German rows) are
+derived from "OpenPII 1M" (ai4privacy/pii-masking-openpii-1m),
+(c) Ai4Privacy / Ai Suisse SA, used under CC-BY-4.0
+(https://creativecommons.org/licenses/by/4.0/). The publisher states the
+dataset is fully synthetic; its generating model is not disclosed. This
+project relies on the publisher's explicit CC-BY-4.0 grant (research,
+commercial use, redistribution, modification), verified July 2026.
+
+Base model: urchade/gliner_multi_pii-v1, Apache-2.0.
+Evaluation only (never in released weights): ai4privacy/pii-masking-400k.
