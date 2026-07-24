@@ -37,6 +37,9 @@ runs/
 wandb/
 mlruns/
 
+# Assets
+assets/*linkedin
+
 # Python
 __pycache__/
 *.py[cod]
