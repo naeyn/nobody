@@ -38,7 +38,7 @@ wandb/
 mlruns/
 
 # Assets
-assets/*linkedin
+*linkedin
 
 # Python
 __pycache__/
