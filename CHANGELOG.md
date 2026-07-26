@@ -40,6 +40,7 @@ are published on [GitHub](https://github.com/naeyn/nobody/releases).
 - Removed raw examples, local paths, credentials, restricted benchmark records,
   and private orchestration from the public release boundary.
 - Expanded the public behavior suite from 89 to 111 tests.
+- Pinned `multiprocess==0.70.17` to avoid a Python 3.12 resource-tracker traceback during otherwise successful CLI shutdown.
 
 ### Model artifact
 
