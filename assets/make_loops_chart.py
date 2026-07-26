@@ -35,7 +35,7 @@ LOOPS = [
     ("4", "Protocol v2", "0.791 F1 · 1.63%", "mix38k checkpoint", "v0.2.0 shipped", "ship"),
     ("5", "Leak hunt", "0.799 F1 · 2.05%", "address / phone / DOB", "G2 failed", "fail"),
     ("6", "Ensembles", "0.815 F1 · 2.61%", "routing + data waves", "G2 failed", "fail"),
-    ("7", "Instrument", "0.795 F1 · 1.51%", "DEV-2 exposed blind spots", "v0.3.0 ships", "ship"),
+    ("7", "Calibration", "0.795 F1 · 1.51%", "DEV-2 exposed blind spots", "v0.3.0 ships", "ship"),
 ]
 
 # Protocol-v2 plot: label, leakage %, F1, colour family.
