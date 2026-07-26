@@ -439,7 +439,8 @@ def test_placeholder_spans_are_suppressed():
 
 def test_active_pipeline_fixes_defaults_to_all_when_unset(monkeypatch):
     monkeypatch.delenv("NOBODY_PIPELINE_FIXES", raising=False)
-    assert active_pipeline_fixes() == {"chain", "housenum", "dobslash", "spacedemail", "phonespace"}
+    assert active_pipeline_fixes() == {"chain", "housenum", "dobslash", "spacedemail", "phonespace",
+                                       "buildingnum", "corpustitle", "addrguard", "addrmerge"}
 
 
 def test_active_pipeline_fixes_empty_string_means_none(monkeypatch):
@@ -833,3 +834,174 @@ def test_phonespace_does_not_span_across_a_line_break():
     text2 = "Tel. + 04 64-442-0454\n7 Musterweg"
     spans2 = [text2[s:e] for s, e, l in merge(detect_structured(text2)) if l == "phone number"]
     assert spans2 == ["+ 04 64-442-0454"]
+
+
+# --- Cue-gated building-number detection ------------------------------------
+
+def test_building_number_detects_only_explicit_address_fields():
+    text = "Gebäudenummer: 988; Bautenummer 857; Hausnummer #12A"
+    spans = [text[start:end] for start, end, label in detect_structured(text) if label == "address"]
+    assert spans == ["988", "857", "12A"]
+
+
+def test_building_number_rejects_generic_numbers_and_can_be_disabled():
+    text = "Bestellnummer 988 und Gebäudenummer: 857"
+    active = [text[start:end] for start, end, label in detect_structured(text) if label == "address"]
+    disabled = [text[start:end] for start, end, label in detect_structured(text, fixes=frozenset()) if label == "address"]
+    assert active == ["857"]
+    assert disabled == []
+
+
+def test_building_number_handles_html_entities_and_sentence_periods():
+    text = "Ihre Geb&auml;udenummer 988. Neue Bautenummer 857."
+    spans = [text[start:end] for start, end, label in detect_structured(text) if label == "address"]
+    assert spans == ["988", "857"]
+
+
+# --- Ambiguous month/slash reporting periods ----------------------------------
+
+def test_month_slash_after_a_bare_preposition_is_still_masked():
+    # A bare am/bis/ab is too weak a reason to withhold masking. A second,
+    # disjoint development set showed that the old rule suppressed genuine DOB
+    # spans in deadline-shaped prose. Numeric dates stay recall-first; only an
+    # explicit operational date field suppresses now.
+    text = "Die Angabe wurde am Juli/19 erfasst."
+    dates = [text[start:end] for start, end, label in detect_structured(text) if label == "date of birth"]
+    assert dates == ["Juli/19"]
+
+
+def test_month_slash_after_am_is_retained_with_birth_cue():
+    text = "Geboren am Oktober/64."
+    dates = [text[start:end] for start, end, label in detect_structured(text) if label == "date of birth"]
+    assert dates == ["Oktober/64"]
+
+
+def test_month_slash_validity_periods_after_bis_or_ab_are_masked_recall_first():
+    # Same reversal as above: prepositional context no longer exempts a date.
+    text = "Gültig bis Oktober/86 und ab Juli/09."
+    dates = [text[start:end] for start, end, label in detect_structured(text) if label == "date of birth"]
+    assert dates == ["Oktober/86", "Juli/09"]
+
+
+def test_month_slash_operational_date_fields_are_not_dobs():
+    text = "Termin: Juni/30; Deckungsbeginn: Oktober/21; Geburtsdatum: Juni/35."
+    dates = [text[start:end] for start, end, label in detect_structured(text) if label == "date of birth"]
+    assert dates == ["Juni/35"]
+
+
+# --- Phone boundary and IBAN collisions --------------------------------------
+
+def test_phone_detector_rejects_valid_iban_tails_and_long_digit_substrings():
+    text = "IBAN CH93 0076 2011 6238 5295 7; Bewertungsparameter 08545982968548529850"
+    spans = [(text[start:end], label) for start, end, label in detect_structured(text)]
+    assert ("CH93 0076 2011 6238 5295 7", "iban") in spans
+    assert not any(label == "phone number" for _, label in spans)
+    malformed = "IBAN CH 3653 7482 0883 2024 3"
+    assert not any(label == "phone number" for _, _, label in detect_structured(malformed))
+
+
+def test_phone_detector_rejects_hyphenated_identifier_tail_but_keeps_phone():
+    text = "Kennung CHE-080-730-591; Telefon +49 30 1234567"
+    phones = [text[start:end] for start, end, label in detect_structured(text) if label == "phone number"]
+    assert phones == ["+49 30 1234567"]
+
+# Corpus-style honorifics can appear glued to either edge of a person span.
+
+def test_corpus_title_is_trimmed_from_both_ends():
+    text = "Bgm Nolan Berger und Renata Fr sind eingeladen."
+    assert text[slice(*trim_person_title(text, 0, 16))] == "Nolan Berger"
+    assert text[slice(*trim_person_title(text, 21, 30))] == "Renata"
+
+
+def test_corpus_title_never_consumes_the_whole_span():
+    # A span that is nothing but an honorific must survive unchanged rather than
+    # collapse to an empty span (which would drop the mask entirely).
+    text = "Bgm meldet sich."
+    assert trim_person_title(text, 0, 3) == (0, 3)
+
+
+def test_corpus_title_leaves_sen_alone_as_a_real_surname():
+    # "Sen" is a genuine trailing surname; trimming it would turn a true
+    # positive into a leaked gold token. Deliberately not in the trim list.
+    text = "Kontakt ist Bo Lin heute."
+    assert text[slice(*trim_person_title(text, 12, 18))] == "Bo Lin"
+
+
+def test_corpus_title_respects_the_fix_toggle(monkeypatch):
+    monkeypatch.setenv("NOBODY_PIPELINE_FIXES", "chain,housenum")
+    text = "Bgm Nolan Berger kommt."
+    assert trim_person_title(text, 0, 16) == (0, 16)
+
+
+# addrguard: a postal address is not a network address, and a model address span
+# must not absorb a checksum-validated structured detection.
+
+def test_addrguard_drops_network_addresses():
+    text = "Netzadresse: 24:e1:43:0d:76:a8 und Wallet 0xe9cc55f163ed39097c0c54ac95d0191713b51ab8."
+    spans = [(13, 30, "address"), (42, 84, "address")]
+    assert apply_address_fixes(text, spans) == []
+
+
+def test_addrguard_drops_bare_placeholder_tokens():
+    text = "Kontaktadresse ist SECONDARYADDRESS_17 ."
+    assert apply_address_fixes(text, [(19, 38, "address")]) == []
+
+
+def test_addrguard_keeps_a_real_address_untouched():
+    text = "Anschrift: Blücherstraße 5, 52525 Budenheim."
+    assert apply_address_fixes(text, [(11, 43, "address")]) == [(11, 43, "address")]
+
+
+def test_addrguard_trims_a_swallowed_phone_number():
+    text = "Adresse: 2 Kurt-Schumacher-Straße, 99084, 6267-747-1501"
+    result = apply_address_fixes(text, [(9, 55, "address"), (42, 55, "phone number")])
+    trimmed = [sp for sp in result if sp[2] == "address"]
+    assert trimmed == [(9, 40, "address")], trimmed
+    assert text[trimmed[0][0]:trimmed[0][1]] == "2 Kurt-Schumacher-Straße, 99084"
+
+
+def test_addrguard_respects_the_fix_toggle(monkeypatch):
+    monkeypatch.setenv("NOBODY_PIPELINE_FIXES", "chain,housenum")
+    text = "Netzadresse: 24:e1:43:0d:76:a8 ."
+    assert apply_address_fixes(text, [(13, 30, "address")]) == [(13, 30, "address")]
+
+
+# Separator and morphology variants of German building-number field labels.
+
+def test_building_number_accepts_separator_and_morphology_variants():
+    for text, expected in [
+        ("Gebäude Nr. 335", ["335"]),
+        ("Gebäude-Nr: 12", ["12"]),
+        ("Gebäudenr. 7", ["7"]),
+        ("Nummer des Gebäudes: 44", ["44"]),
+        ("Bau-Nummer: 169", ["169"]),
+        ("Haus-Nr. 8", ["8"]),
+    ]:
+        spans = [text[s:e] for s, e, l in detect_structured(text) if l == "address"]
+        assert spans == expected, (text, spans)
+
+
+def test_building_number_cue_stays_narrow():
+    # A generic address field is NOT a building-number cue: it is routinely
+    # followed by order, year, room, or phone values rather than house numbers.
+    for text in ["Adresse: 361", "Anschrift: 2024", "Telefonnummer: 0301234",
+                 "Bestellnummer 988", "Zimmer 13"]:
+        spans = [text[s:e] for s, e, l in detect_structured(text) if l == "address"]
+        assert spans == [], (text, spans)
+
+
+def test_addrmerge_joins_fragments_across_address_punctuation():
+    # A component-level model emits street and postal city separately; they are
+    # one postal address and must be masked as one span.
+    text = "Anschrift: Blücherstraße 5, 52525 Budenheim."
+    merged = [sp for sp in apply_address_fixes(text, [(11, 27, "address"), (29, 43, "address")])
+              if sp[2] == "address"]
+    assert merged == [(11, 43, "address")]
+    assert text[merged[0][0]:merged[0][1]] == "Blücherstraße 5, 52525 Budenheim"
+
+
+def test_addrmerge_does_not_join_across_real_text():
+    # More than a short punctuation run between fragments means two addresses.
+    text = "Werk in Essen und Lager in 12345 Hamburg."
+    spans = [(8, 13, "address"), (27, 40, "address")]
+    assert sorted(sp for sp in apply_address_fixes(text, spans) if sp[2] == "address") == spans

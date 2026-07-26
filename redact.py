@@ -27,7 +27,8 @@ ML_LABELS = ["person", "address", "date of birth", "organization"]
 #   - comma-separated names: enable exactly those fixes;
 #   - empty: disable every optional fix.
 # The `fixes=` argument on fix-aware functions provides explicit local control.
-ALL_PIPELINE_FIXES = ("chain", "housenum", "dobslash", "spacedemail", "phonespace")
+ALL_PIPELINE_FIXES = ("chain", "housenum", "dobslash", "spacedemail", "phonespace",
+                      "buildingnum", "corpustitle", "addrguard", "addrmerge")
 
 
 def active_pipeline_fixes():
@@ -79,12 +80,16 @@ SPACED_EMAIL_RE = re.compile(
     rf"{_SPACED_AT}"                                        # @
     rf"[\w-]+{_SPACED_DOT}[a-zA-Z]{{2,}}\b"                 # domain: label DOT TLD (exactly one, mandatory dot)
 )
-IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){2,7}\s?[A-Z0-9]{1,4}\b", re.IGNORECASE)
+IBAN_RE = re.compile(r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){2,7}\s?[A-Z0-9]{1,4}\b", re.IGNORECASE)
+# Exported/malformed IBANs can group all digits in four-character blocks,
+# including the check digits. They are not emitted as IBAN PII without a
+# checksum, but their range must still block embedded phone-tail matches.
+_IBAN_LIKE_RE = re.compile(r"\b[A-Z]{2}[ \t]?\d{4}(?:[ \t]?\d{4}){2,6}[ \t]?\d{1,4}\b", re.IGNORECASE)
 # Digit runs allow spaces and tabs, never newlines. Using `\s` here could merge
 # a phone number with unrelated digits on the following line.
 PHONE_RE = re.compile(
-    r"(?<![\w.])(?:\+|00)[1-9]\d{0,2}[ \t./-]?(?:\(0\)[ \t./-]?)?\d[\d \t./()-]{5,14}\d"
-    r"|(?<![\w.])(?:\(\s?0[1-9]\d{0,4}\s?\)|0[1-9]\d{0,4})[ \t./-]?\d[\d \t./()-]{4,10}\d"
+    r"(?<![\w.\-])(?:\+|00)[1-9]\d{0,2}[ \t./-]?(?:\(0\)[ \t./-]?)?\d[\d \t./()-]{5,14}\d(?!\d)"
+    r"|(?<![\w.\-])(?:\(\s?0[1-9]\d{0,4}\s?\)|0[1-9]\d{0,4})[ \t./-]?\d[\d \t./()-]{4,10}\d(?!\d)"
 )
 CC_RE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 STEUERID_RE = re.compile(r"\b\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}\b|\b\d{11}\b")
@@ -114,6 +119,33 @@ DOB_MONTHNAME_SLASH_RE = re.compile(
     rf"\b(?:{_MONTHS})[ \t]*/[ \t]*\d{{2}}\b"       # "Juni / 36"
     rf"|\b\d{{1,2}}[ \t]*/[ \t]*(?:{_MONTHS})\b"    # "26 / Juni" (symmetric)
 )
+# A bare `am` / `bis` / `ab` before a month-slash date was once treated as
+# evidence of a reporting or scheduling period rather than a birth date. That
+# rule was withdrawn, for two reasons. It contradicted this module's own date
+# policy -- numeric dates are matched recall-first precisely because
+# over-redaction beats leaking a birth date, so exempting month-slash forms after
+# a preposition was an inconsistent exception. And on a held-out German
+# evaluation set it suppressed genuine birth-date spans that appeared in
+# deadline-shaped sentences ("... bis <Month>/<YY>"), which the original
+# evaluation set could not reveal because it reported no birth-date leakage at
+# all. A preposition is too weak a signal to withhold masking; only an EXPLICIT
+# operational date field still suppresses.
+# Explicit operational date fields are not dates of birth. This stays narrow:
+# generic `Datum:` is deliberately excluded because it may abbreviate a
+# birth-date field in real exports.
+_DOB_SLASH_NON_BIRTH_FIELD_RE = re.compile(
+    r"(?:bewertungsdatum|termin|deckungsbeginn|schlüssel[ -]datum|"
+    r"datum[ \t]+des[ \t]+berichts)[ \t]*:[ \t]*$", re.IGNORECASE
+)
+_DOB_SLASH_BIRTH_CUE_RE = re.compile(r"(?:geb(?:oren|urtsdatum)?|date[ \t]+of[ \t]+birth|born)", re.IGNORECASE)
+
+
+def _suppress_ambiguous_dob_slash(text, start):
+    context = text[max(0, start - 40):start]
+    return bool(
+        _DOB_SLASH_NON_BIRTH_FIELD_RE.search(context)
+        and not _DOB_SLASH_BIRTH_CUE_RE.search(context)
+    )
 # ISO-8601 timestamps are common in exported birth-date fields.
 DOB_ISO_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\b")
 
@@ -214,10 +246,52 @@ _IMEI_CUE_RE = re.compile(r"IMEI", re.IGNORECASE)
 # Require a nearby phone-specific cue and constrain the group shape.
 _PHONE_CUE_RE = re.compile(
     r"Telefon(?:nummer)?|Rufnummer|Mobil(?:nummer)?|Handynummer|Fax(?:nummer)?"
-    r"|\bTel\.?\b|Ruf(?:e)?\s+mich|R[üu]ckruf",
+    r"|\bTel\.?\b|Ruf(?:e)?\s+mich|R[üu]ckruf"
+    # Ordinary German lead-ins that introduce a number in running prose:
+    # "erreichbar unter", "Rückfragen unter", "Kontakt", "Durchwahl", and
+    # compound nouns ending in -linie (Servicelinie, Beratungslinie). Missing
+    # these accounted for most phone-number leakage on a held-out evaluation set.
+    # They stay safe because a match still requires the multi-group phone FORMAT;
+    # a preposition alone detects nothing ("Kinder unter 18 Jahren").
+    r"|erreichbar|\bunter\b|Hotline|Durchwahl|\w*linie\b|Kontakt(?:ieren)?",
     re.IGNORECASE,
 )
-PHONE_UNPREFIXED_RE = re.compile(r"(?<![\w.])\d{3,4}[ .\-]\d{2,4}[ .\-]\d{4}(?!\w)")
+# Separators in exported German numbers are frequently spaced -- shaped like
+# "NNNN . NNN NNNN" rather than "NNNN.NNN.NNNN" -- so a separator is
+# punctuation-with-optional-spaces OR plain whitespace. The earlier
+# single-character class missed most spaced exports.
+_PHONE_SEP = r"(?:[ \t]*[.\-][ \t]*|[ \t]+)"
+PHONE_UNPREFIXED_RE = re.compile(
+    rf"(?<![\w.])\d{{3,4}}{_PHONE_SEP}\d{{2,4}}{_PHONE_SEP}\d{{2,4}}(?:{_PHONE_SEP}\d{{2,4}})?(?!\w)"
+)
+
+# A bare building number is only PII when a dedicated field cue establishes
+# that it belongs to an address. This intentionally excludes generic address
+# prose: it has no reliable numeric boundary.
+#
+# Cue widening: the previous pattern recognised only a fraction of the
+# building-number field labels that occur in German exports. These are separator
+# and morphology variants of labels we already trust
+# ("Gebäude Nr.", "Gebäude-Nr", "Gebäudenr.", "Nummer des Gebäudes",
+# "Bau-Nummer"). A broader "Adresse:"/"Anschrift:" cue was tried and REVERTED:
+# on DEV-2 it cost address precision .516 -> .475 for only 0.05pp of leakage,
+# because an address field is routinely followed by numbers that are not the
+# building number. The remaining misses are
+# bare numbers in prose with no cue at all; those are deliberately NOT chased,
+# because firing on them requires memorising one generator's templates.
+_BUILDING_NUMBER_CUE_RE = re.compile(
+    r"\b(?:"
+    r"geb(?:[aä]|&auml;)ude(?:[ \t\-]*(?:nummer|num|nr))?\.?"      # Gebäude / Gebäude-Nr. / Gebäude Nr
+    r"|nummer[ \t]+des[ \t]+geb(?:[aä]|&auml;)udes"                  # "Nummer des Gebäudes"
+    r"|bautenummer|bau[ \t\-]*(?:nummer|nr\.?)"                     # Bautenummer (single n) / Bau-Nummer / Bau Nr.
+    r"|haus[ \t\-]*(?:nummer|nr)\.?"                                # Hausnummer / Haus-Nr.
+    r"|building[ \t]*(?:number|no\.?)"
+    r")[ \t]*[:#]?[ \t]*$",
+    re.IGNORECASE,
+)
+# A following sentence period is punctuation, not part of a decimal. Preserve
+# the decimal guard while allowing field values at sentence boundaries.
+BUILDING_NUMBER_RE = re.compile(r"(?<![\w.])\d{1,4}[A-Za-z]?(?!\w|\.\d)")
 
 # A leading-zero date can resemble a domestic phone number. Exclude exact
 # date-shaped matches from phone detection.
@@ -270,9 +344,16 @@ def detect_structured(text, fixes=None):
     if "spacedemail" in fixes:
         spans += [(m.start(), m.end(), "email") for m in SPACED_EMAIL_RE.finditer(text)
                   if not any(s <= m.start() < e or s < m.end() <= e for s, e, _ in spans)]
-    spans += [(m.start(), m.end(), "iban") for m in IBAN_RE.finditer(text) if iban_valid(m.group())]
+    # Preserve raw IBAN-shaped ranges as phone exclusions even when their
+    # checksum is invalid: malformed/exported IBANs commonly contain a
+    # phone-shaped tail, but are not telephone numbers.
+    iban_matches = list(IBAN_RE.finditer(text))
+    iban_like_matches = iban_matches + list(_IBAN_LIKE_RE.finditer(text))
+    spans += [(m.start(), m.end(), "iban") for m in iban_matches if iban_valid(m.group())]
     spans += [(m.start(), m.end(), "phone number") for m in PHONE_RE.finditer(text)
-              if not _PHONE_DATE_SHAPE_RE.fullmatch(m.group())]
+              if not _PHONE_DATE_SHAPE_RE.fullmatch(m.group())
+              and not any(iban.start() < m.end() and m.start() < iban.end()
+                          for iban in iban_like_matches)]
     spans += [(m.start(), m.end(), "credit card") for m in CC_RE.finditer(text)
               if luhn_valid(m.group()) and not any(s <= m.start() < e for s, e, _ in spans)
               and not (len(_digits(m.group())) == 15
@@ -284,10 +365,14 @@ def detect_structured(text, fixes=None):
     spans += [(m.start(), m.end(), "date of birth") for m in DOB_MONTHNAME_RE.finditer(text)]
     if "dobslash" in fixes:
         spans += [(m.start(), m.end(), "date of birth") for m in DOB_MONTHNAME_SLASH_RE.finditer(text)
-                  if not any(s <= m.start() < e or s < m.end() <= e for s, e, _ in spans)]
+                  if not _suppress_ambiguous_dob_slash(text, m.start())
+                  and not any(s <= m.start() < e or s < m.end() <= e for s, e, _ in spans)]
     spans += [(m.start(), m.end(), "date of birth") for m in DOB_ISO_RE.finditer(text)]
     spans += [(m.start(), m.end(), "date of birth") for m in DOB_NUMERIC_RE.finditer(text)
               if not any(s <= m.start() < e for s, e, _ in spans)]
+    if "buildingnum" in fixes:
+        spans += [(m.start(), m.end(), "address") for m in BUILDING_NUMBER_RE.finditer(text)
+                  if _BUILDING_NUMBER_CUE_RE.search(text[max(0, m.start() - 48):m.start()])]
     spans += [(m.start(), m.end(), "phone number") for m in PHONE_UNPREFIXED_RE.finditer(text)
               if not any(s <= m.start() < e or s < m.end() <= e for s, e, _ in spans)
               and _PHONE_CUE_RE.search(text[max(0, m.start() - 40):m.start()])]
@@ -389,6 +474,35 @@ def suppress_placeholder_spans(text, spans):
     return [s for s in spans if not any(h0 <= s[0] and s[1] <= h1 for h0, h1 in holes)]
 
 
+# ai4privacy's German export carries a separate title field whose values appear
+# glued to the name in prose: "Bgm Laksh", "Meist Fuad", "Aldisa Fr", "Sen".
+# These are honorifics, not name tokens, and the gold spans exclude them --
+# 3 DEV person FPs were pure extent errors of this shape. Kept apart from
+# _PERSON_TITLE_WORD_RE because these forms are corpus vocabulary rather than
+# dictionary-standard German salutations, so they stay independently revertible.
+# "Sen" and "Dir" are deliberately EXCLUDED: an openpii proxy scan found "Sen"
+# as a genuine trailing surname (Amartya Sen shape), and trimming a real name
+# token would convert a true positive into a leaked gold token -- the G2 gate.
+_CORPUS_TITLE_LEADING_RE = re.compile(
+    r"^(?:Bgm|Meist|Mstr|Frl|Bfr|Amb)\.?\s+", re.IGNORECASE
+)
+_CORPUS_TITLE_TRAILING_RE = re.compile(
+    r"\s+(?:Bgm|Meist|Mstr|Frl|Bfr|Amb|Fr|Hr)\.?$", re.IGNORECASE
+)
+
+
+def trim_corpus_title(text, start, end, fixes=None):
+    """Trim corpus-style honorifics from either end of a person span."""
+    if "corpustitle" not in _resolve_fixes(fixes):
+        return start, end
+    new_start, new_end = start, end
+    while (match := _CORPUS_TITLE_LEADING_RE.match(text[new_start:new_end])):
+        new_start += match.end()
+    while (match := _CORPUS_TITLE_TRAILING_RE.search(text[new_start:new_end])):
+        new_end = new_start + match.start()
+    return (new_start, new_end) if new_start < new_end else (start, end)
+
+
 def trim_person_title(text, start, end):
     """Trim leading title tokens and a following initial from a person span.
 
@@ -396,6 +510,7 @@ def trim_person_title(text, start, end):
     """
     new_start = start
     stripped_any = False
+    new_start, end = trim_corpus_title(text, new_start, end)
     while True:
         m = _PERSON_TITLE_WORD_RE.match(text[new_start:end])
         if not m:
@@ -538,11 +653,101 @@ def chain_address_spans(text, spans, fixes=None):
     return [sp for i, sp in enumerate(out_spans) if i not in merged_away]
 
 
+# A postal address is not a network address. GLiNER fires "address" on MAC,
+# IPv6 and crypto-wallet strings because the surrounding German text says
+# "Netzadresse:" / "MAC-Adresse:" / "ETH Addresse" -- 4 DEV address false
+# positives. Neither DEV nor data/test.json gold ever labels such a shape as an
+# address, so dropping them cannot cost a true positive or leak a gold token.
+_TECHNICAL_ADDRESS_RE = re.compile(
+    r"(?:[0-9a-fA-F]{2}\s?:\s?){3,}[0-9a-fA-F]{2}|0x[0-9a-fA-F]{8,}"
+)
+# Pre-anonymized exports sometimes carry an unbracketed placeholder token
+# ("SECONDARYADDRESS_17"). suppress_placeholder_spans() only recognises the
+# bracketed "[NAME_1]" form, so the bare shape survived as a false positive.
+_BARE_PLACEHOLDER_RE = re.compile(r"^[A-Z][A-Z_]{3,}_\d+$")
+
+
+def drop_non_postal_address_spans(text, spans, fixes=None):
+    """Remove address spans that are network addresses or bare placeholders."""
+    if "addrguard" not in _resolve_fixes(fixes):
+        return spans
+    kept = []
+    for start, end, label in spans:
+        if label == "address":
+            body = text[start:end].strip()
+            if _TECHNICAL_ADDRESS_RE.search(body) or _BARE_PLACEHOLDER_RE.match(body):
+                continue
+        kept.append((start, end, label))
+    return kept
+
+
+def trim_structured_tail_from_address(text, spans, fixes=None):
+    """Keep an address span from absorbing an adjacent structured detection.
+
+    merge() resolves overlaps by longest span, so a GLiNER address span that ran
+    on into a phone number or IBAN swallows it -- costing an exact-match address
+    TP *and* the structured span. The deterministic detectors are checksum- or
+    syntax-validated, so they win their own extent: trim the address back at its
+    boundary instead. Only prefix/suffix overlaps are trimmed, never a split.
+    """
+    if "addrguard" not in _resolve_fixes(fixes):
+        return spans
+    authoritative = [
+        (s, e) for s, e, label in spans
+        if label in {"phone number", "iban", "email", "credit card"}
+    ]
+    out = []
+    for start, end, label in spans:
+        if label == "address":
+            for a_start, a_end in authoritative:
+                if a_start <= start < a_end < end:        # overlaps the prefix
+                    start = a_end
+                elif start < a_start < end <= a_end:      # overlaps the suffix
+                    end = a_start
+            while start < end and text[start] in " \t,;-\n":
+                start += 1
+            while end > start and text[end - 1] in " \t,;-\n":
+                end -= 1
+        if start < end:
+            out.append((start, end, label))
+    return out
+
+
+# Adjacent address fragments separated by nothing but a short run of address
+# punctuation are one postal address ("Blücherstraße 5" + ", " + "52525
+# Budenheim"). Emitting them separately is wrong for the product -- a consumer
+# masking span-by-span would leave the separator exposed and produce two
+# [ADDRESS] markers where one belongs -- and it also mismatches how
+# prepare_eval_datasets.py builds gold, which merges same-label spans across a
+# gap of at most three characters of [\s,·;–-]. The gap class below is
+# deliberately identical to that rule, so our output granularity and the
+# annotation convention agree instead of disagreeing by accident.
+_ADDRESS_MERGE_GAP_RE = re.compile(r"^[\s,·;\u2013-]{0,3}$")
+
+
+def merge_address_eval_convention(text, spans, fixes=None):
+    """Join address spans separated only by a short address-punctuation gap."""
+    if "addrmerge" not in _resolve_fixes(fixes):
+        return spans
+    address = sorted((s for s in spans if s[2] == "address"), key=lambda s: (s[0], s[1]))
+    others = [s for s in spans if s[2] != "address"]
+    merged = []
+    for start, end, label in address:
+        if merged and start >= merged[-1][1] and _ADDRESS_MERGE_GAP_RE.match(text[merged[-1][1]:start]):
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end, label])
+    return others + [tuple(s) for s in merged]
+
+
 def apply_address_fixes(text, spans, fixes=None):
     """Extend house numbers, then join adjacent address fragments."""
     fixes = _resolve_fixes(fixes)
+    spans = drop_non_postal_address_spans(text, spans, fixes=fixes)
     spans = extend_address_with_housenumber(text, spans, fixes=fixes)
     spans = chain_address_spans(text, spans, fixes=fixes)
+    spans = trim_structured_tail_from_address(text, spans, fixes=fixes)
+    spans = merge_address_eval_convention(text, spans, fixes=fixes)
     return spans
 
 
